@@ -1,5 +1,4 @@
 import ether from '../helpers/ether';
-import expectThrow from '../helpers/expectThrow';
 import assertRevert from '../helpers/assertRevert';
 
 const DutchAuction = artifacts.require('DutchAuction');
@@ -66,21 +65,37 @@ contract('DutchAuction', function (accounts) {
       await auction.startAuction(token.address, tokenId, { from: beneficiary});
       await token.approve(auction.address, tokenId, {from: beneficiary});
       await assertRevert(auction.processBid( {from: bidder, value: bid }));
-    });
+    }); 
 
-    it('should transfer overage to bidder if bid is greater than currentAskingPrice', async function () {
-      bid = ether(3);
-      // original balance of bidder
+    it('should subtract bid amount from bidder when bid is equal to currentAskingPrice', async function () {
+      bid = ether(2);
       const bidderOriginalBalance = web3.eth.getBalance(bidder);
 
       await auction.startAuction(token.address, tokenId, { from: beneficiary});
       await token.approve(auction.address, tokenId, {from: beneficiary});
 
-      // obtain gas used from the receipt
       const txReceipt = await auction.processBid({from: bidder, value: bid});
       const gasUsed = txReceipt.receipt.gasUsed;
 
-      // obtain gasPrice from the transaction
+      const transaction = await web3.eth.getTransaction(txReceipt.tx);
+      const gasPrice = transaction.gasPrice;
+      const totalGasCost = gasPrice.mul(gasUsed).toString();
+      
+      const bidderFinalBalance = web3.eth.getBalance(bidder);
+      const differenceInBalance = (bidderOriginalBalance.sub(bidderFinalBalance)).sub(totalGasCost);
+      assert.equal(differenceInBalance.toNumber(), bid.toNumber());
+    }); 
+    
+    it('should transfer overage to bidder and subtract currentAskingPrice if bid is greater than currentAskingPrice', async function () {
+      bid = ether(3);
+      const bidderOriginalBalance = web3.eth.getBalance(bidder);
+
+      await auction.startAuction(token.address, tokenId, { from: beneficiary});
+      await token.approve(auction.address, tokenId, {from: beneficiary});
+      
+      const txReceipt = await auction.processBid({from: bidder, value: bid});
+      const gasUsed = txReceipt.receipt.gasUsed;
+
       const transaction = await web3.eth.getTransaction(txReceipt.tx);
       const gasPrice = transaction.gasPrice;
       const totalGasCost = gasPrice.mul(gasUsed).toString();
@@ -89,18 +104,8 @@ contract('DutchAuction', function (accounts) {
       const bidderFinalBalance = web3.eth.getBalance(bidder);
       const correctBalance = (bidderOriginalBalance.sub(currentAskingPrice)).sub(totalGasCost);
       assert.equal(bidderFinalBalance.toNumber(), correctBalance.toNumber());
-  	});  
-
-    it('should find the currentAskingPrice after an auction has started', async function () {
-      // Shouldn't this work even if bid is lower than currentAskingPrice?
-      bid = ether(2);
-      await auction.startAuction(token.address, tokenId, { from: beneficiary});
-      await token.approve(auction.address, tokenId, {from: beneficiary});
-      await auction.processBid( {from: bidder, value: bid });
-      const currentAskingPrice = await auction.currentAskingPrice();
-      assert.exists(currentAskingPrice.toNumber(), 'currentAskingPrice is neither `null` nor `undefined`');
-      assert.isAbove(currentAskingPrice.toNumber(), 0, 'currentAskingPrice is greater than 0');
-    });  
+    }); 
+    
   });
 
   describe('pay the beneficiary', function () {
